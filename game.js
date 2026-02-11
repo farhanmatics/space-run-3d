@@ -242,69 +242,315 @@ function setupThreeJS() {
     dirLight.shadow.camera.bottom = -20;
     scene.add(dirLight);
 
-    // Ground Plane (Infinite illusion)
-    // Create a dynamic texture for speed sensation
-    const canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#0b1224';
-    ctx.fillRect(0,0,128,128);
-    ctx.fillStyle = '#1d2c4a';
-    for(let i=0; i<7; i++) ctx.fillRect(Math.random()*128, Math.random()*128, 2, 2);
-    const groundTex = new THREE.CanvasTexture(canvas);
-    groundTex.wrapS = THREE.RepeatWrapping;
-    groundTex.wrapT = THREE.RepeatWrapping;
-    groundTex.repeat.set(20, 40);
-    window.groundTex = groundTex;
-
-    const groundGeo = new THREE.PlaneGeometry(100, 200);
-    const groundMat = new THREE.MeshStandardMaterial({ 
-        map: groundTex,
-        roughness: 0.8,
-        metalness: 0.2
-    });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.z = -50;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    // Deep Space Skybox
-    const skyCanvas = document.createElement('canvas');
-    skyCanvas.width = 512; skyCanvas.height = 512;
-    const sCtx = skyCanvas.getContext('2d');
-    const skyGrad = sCtx.createLinearGradient(0, 0, 0, 512);
-    skyGrad.addColorStop(0, '#01040d');
-    skyGrad.addColorStop(0.5, '#050b1d');
-    skyGrad.addColorStop(1, '#0b1230');
-    sCtx.fillStyle = skyGrad;
-    sCtx.fillRect(0, 0, 512, 512);
-    
-    // Procedural stars and faint nebula glints
-    for(let i=0; i<380; i++) {
-        sCtx.fillStyle = ['#c9d9ff', '#8ce4ff', '#ffffff', '#a8b6ff'][Math.floor(Math.random()*4)];
-        sCtx.globalAlpha = 0.3 + Math.random() * 0.7;
-        const size = Math.random() * 2.4;
-        sCtx.fillRect(Math.random()*512, Math.random()*512, size, size);
+    // Space void below (no solid ground - just open space)
+    // Faint star-field plane far below to give depth
+    const voidCanvas = document.createElement('canvas');
+    voidCanvas.width = 256; voidCanvas.height = 256;
+    const vCtx = voidCanvas.getContext('2d');
+    vCtx.fillStyle = '#010208';
+    vCtx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 120; i++) {
+        vCtx.fillStyle = ['#6688cc', '#aabbee', '#ffffff', '#5577aa'][Math.floor(Math.random() * 4)];
+        vCtx.globalAlpha = 0.15 + Math.random() * 0.35;
+        const sz = Math.random() * 1.8;
+        vCtx.fillRect(Math.random() * 256, Math.random() * 256, sz, sz);
     }
-    for(let i=0; i<18; i++) {
-        sCtx.fillStyle = ['rgba(95,145,255,0.12)', 'rgba(173,120,255,0.1)', 'rgba(80,220,255,0.08)'][Math.floor(Math.random()*3)];
+    vCtx.globalAlpha = 1;
+    const voidTex = new THREE.CanvasTexture(voidCanvas);
+    voidTex.wrapS = THREE.RepeatWrapping;
+    voidTex.wrapT = THREE.RepeatWrapping;
+    voidTex.repeat.set(12, 24);
+    window.groundTex = voidTex;
+
+    const voidGeo = new THREE.PlaneGeometry(200, 400);
+    const voidMat = new THREE.MeshBasicMaterial({
+        map: voidTex,
+        transparent: true,
+        opacity: 0.4,
+        depthWrite: false
+    });
+    const voidPlane = new THREE.Mesh(voidGeo, voidMat);
+    voidPlane.rotation.x = -Math.PI / 2;
+    voidPlane.position.set(0, -8, -80);
+    scene.add(voidPlane);
+
+    // --- Star streak particles (speed lines rushing past) ---
+    const streakCount = 200;
+    const streakGeo = new THREE.BufferGeometry();
+    const streakPositions = new Float32Array(streakCount * 3);
+    for (let i = 0; i < streakCount; i++) {
+        streakPositions[i * 3] = (Math.random() - 0.5) * 60;       // x: wide spread
+        streakPositions[i * 3 + 1] = Math.random() * 20 - 2;       // y: mostly above
+        streakPositions[i * 3 + 2] = Math.random() * -160;          // z: spread along depth
+    }
+    streakGeo.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
+    const streakMat = new THREE.PointsMaterial({
+        color: 0xaaccff,
+        size: 0.12,
+        transparent: true,
+        opacity: 0.6,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    const streakPoints = new THREE.Points(streakGeo, streakMat);
+    scene.add(streakPoints);
+    window.starStreaks = streakPoints;
+
+    // === RICH SPACE SKYBOX ===
+    const skyCanvas = document.createElement('canvas');
+    const skySize = 1024;
+    skyCanvas.width = skySize; skyCanvas.height = skySize;
+    const sCtx = skyCanvas.getContext('2d');
+
+    // Deep space gradient
+    const skyGrad = sCtx.createLinearGradient(0, 0, 0, skySize);
+    skyGrad.addColorStop(0, '#010308');
+    skyGrad.addColorStop(0.3, '#040a1a');
+    skyGrad.addColorStop(0.6, '#060e22');
+    skyGrad.addColorStop(1, '#08122e');
+    sCtx.fillStyle = skyGrad;
+    sCtx.fillRect(0, 0, skySize, skySize);
+
+    // --- Nebula clouds (large, colorful gas regions) ---
+    const nebulaColors = [
+        'rgba(120, 60, 200, 0.08)',   // purple
+        'rgba(60, 100, 220, 0.07)',   // blue
+        'rgba(200, 50, 120, 0.06)',   // pink
+        'rgba(40, 160, 200, 0.06)',   // teal
+        'rgba(180, 80, 255, 0.05)',   // violet
+        'rgba(255, 100, 80, 0.04)',   // warm red
+        'rgba(60, 200, 160, 0.05)'    // cyan-green
+    ];
+    for (let n = 0; n < 35; n++) {
+        const nx = Math.random() * skySize;
+        const ny = Math.random() * skySize;
+        const nr = 60 + Math.random() * 180;
+        const grad = sCtx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+        const col = nebulaColors[Math.floor(Math.random() * nebulaColors.length)];
+        grad.addColorStop(0, col);
+        grad.addColorStop(0.5, col.replace(/[\d.]+\)$/, (parseFloat(col.match(/[\d.]+\)$/)[0]) * 0.5) + ')'));
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        sCtx.fillStyle = grad;
+        sCtx.fillRect(0, 0, skySize, skySize);
+    }
+
+    // Layered nebula wisps (elongated ellipses)
+    for (let w = 0; w < 12; w++) {
+        sCtx.save();
+        sCtx.translate(Math.random() * skySize, Math.random() * skySize);
+        sCtx.rotate(Math.random() * Math.PI);
+        sCtx.scale(1 + Math.random() * 2, 0.3 + Math.random() * 0.5);
+        const wGrad = sCtx.createRadialGradient(0, 0, 0, 0, 0, 50 + Math.random() * 80);
+        const wCol = nebulaColors[Math.floor(Math.random() * nebulaColors.length)];
+        wGrad.addColorStop(0, wCol);
+        wGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        sCtx.fillStyle = wGrad;
+        sCtx.fillRect(-150, -150, 300, 300);
+        sCtx.restore();
+    }
+
+    // --- Dense star field (multiple layers for depth) ---
+    // Dim distant stars
+    for (let i = 0; i < 600; i++) {
+        sCtx.fillStyle = ['#8899bb', '#667799', '#99aacc', '#7788aa'][Math.floor(Math.random() * 4)];
+        sCtx.globalAlpha = 0.15 + Math.random() * 0.3;
+        const sz = Math.random() * 1.2;
+        sCtx.fillRect(Math.random() * skySize, Math.random() * skySize, sz, sz);
+    }
+    // Medium stars
+    for (let i = 0; i < 300; i++) {
+        sCtx.fillStyle = ['#c9d9ff', '#aabbee', '#ffffff', '#bbccff'][Math.floor(Math.random() * 4)];
+        sCtx.globalAlpha = 0.4 + Math.random() * 0.5;
+        const sz = 0.8 + Math.random() * 1.5;
+        sCtx.fillRect(Math.random() * skySize, Math.random() * skySize, sz, sz);
+    }
+    // Bright stars (with subtle glow)
+    for (let i = 0; i < 80; i++) {
+        const sx = Math.random() * skySize;
+        const sy = Math.random() * skySize;
+        // Glow
+        sCtx.globalAlpha = 0.15;
+        sCtx.fillStyle = '#aaccff';
         sCtx.beginPath();
-        sCtx.arc(Math.random() * 512, Math.random() * 512, 30 + Math.random() * 90, 0, Math.PI * 2);
+        sCtx.arc(sx, sy, 3 + Math.random() * 3, 0, Math.PI * 2);
         sCtx.fill();
+        // Core
+        sCtx.globalAlpha = 0.7 + Math.random() * 0.3;
+        sCtx.fillStyle = '#ffffff';
+        const coreSize = 1 + Math.random() * 1.5;
+        sCtx.fillRect(sx - coreSize / 2, sy - coreSize / 2, coreSize, coreSize);
     }
     sCtx.globalAlpha = 1;
-    
+
     const skyTex = new THREE.CanvasTexture(skyCanvas);
     skyTex.wrapS = THREE.RepeatWrapping;
     skyTex.wrapT = THREE.RepeatWrapping;
-    skyTex.repeat.set(4, 1);
-    
+    skyTex.repeat.set(3, 1);
+
     const skyGeo = new THREE.SphereGeometry(150, 32, 32);
     const skyMat = new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide });
     const skyMesh = new THREE.Mesh(skyGeo, skyMat);
     scene.add(skyMesh);
     window.skyMesh = skyMesh;
+
+    // === DISTANT PLANET (horizon object) ===
+    const planetGroup = new THREE.Group();
+    // Planet body
+    const planetGeo = new THREE.SphereGeometry(18, 32, 32);
+    const planetMat = new THREE.MeshStandardMaterial({
+        color: 0x334477,
+        roughness: 0.7,
+        metalness: 0.1,
+        emissive: 0x112244,
+        emissiveIntensity: 0.2
+    });
+    const planet = new THREE.Mesh(planetGeo, planetMat);
+    planetGroup.add(planet);
+
+    // Atmosphere rim glow
+    const atmosGeo = new THREE.SphereGeometry(18.5, 32, 32);
+    const atmosMat = new THREE.MeshBasicMaterial({
+        color: 0x4488cc,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.BackSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    const atmos = new THREE.Mesh(atmosGeo, atmosMat);
+    planetGroup.add(atmos);
+
+    // Planet ring
+    const ringGeo = new THREE.TorusGeometry(28, 1.5, 2, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x6699bb,
+        transparent: true,
+        opacity: 0.15,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    const planetRing = new THREE.Mesh(ringGeo, ringMat);
+    planetRing.rotation.x = Math.PI / 2.5;
+    planetGroup.add(planetRing);
+
+    planetGroup.position.set(-60, 25, -130);
+    scene.add(planetGroup);
+    window.distantPlanet = planetGroup;
+
+    // === PARALLAX ASTEROID FIELD (distant floating rocks) ===
+    const asteroidField = new THREE.Group();
+    const asteroidMat = new THREE.MeshStandardMaterial({
+        color: 0x3a3a44,
+        roughness: 0.8,
+        metalness: 0.3,
+        emissive: 0x111115,
+        emissiveIntensity: 0.1
+    });
+    for (let a = 0; a < 40; a++) {
+        const aGeo = new THREE.OctahedronGeometry(0.5 + Math.random() * 1.5, 0);
+        const asteroid = new THREE.Mesh(aGeo, asteroidMat);
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 50 + Math.random() * 60;
+        const height = (Math.random() - 0.5) * 40;
+        asteroid.position.set(
+            Math.cos(angle) * dist,
+            height,
+            Math.sin(angle) * dist - 60
+        );
+        asteroid.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        asteroid.userData.spinSpeed = 0.1 + Math.random() * 0.3;
+        asteroid.userData.spinAxis = Math.random() > 0.5 ? 'x' : 'y';
+        asteroidField.add(asteroid);
+    }
+    scene.add(asteroidField);
+    window.asteroidField = asteroidField;
+
+    // === SHOOTING STAR SYSTEM ===
+    const shootingStars = [];
+    for (let ss = 0; ss < 3; ss++) {
+        const ssGroup = new THREE.Group();
+
+        // Head (bright point)
+        const headGeo = new THREE.SphereGeometry(0.15, 6, 6);
+        const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const head = new THREE.Mesh(headGeo, headMat);
+        ssGroup.add(head);
+
+        // Trail (stretched glow)
+        const trailGeo = new THREE.ConeGeometry(0.08, 3.5, 6);
+        const trailMat = new THREE.MeshBasicMaterial({
+            color: 0xaaccff,
+            transparent: true,
+            opacity: 0.5,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const trail = new THREE.Mesh(trailGeo, trailMat);
+        trail.rotation.x = Math.PI / 2;
+        trail.position.z = 1.8;
+        ssGroup.add(trail);
+
+        // Start hidden off-screen
+        ssGroup.visible = false;
+        ssGroup.userData = {
+            active: false,
+            timer: 5 + Math.random() * 15, // delay before first appearance
+            speed: 80 + Math.random() * 60,
+            dirX: 0, dirY: 0, dirZ: 0
+        };
+        scene.add(ssGroup);
+        shootingStars.push(ssGroup);
+    }
+    window.shootingStars = shootingStars;
+
+    // === NEON HORIZON ARCH (half-circle over the road) — COMMENTED OUT FOR NOW ===
+    /*
+    const neonRingGroup = new THREE.Group();
+
+    const archRadius = 8;
+    const tubeRadius = 0.2;
+    const halfArc = Math.PI; // semicircle
+
+    function makeArchMesh(radius, tube, mat) {
+        const geo = new THREE.TorusGeometry(radius, tube, 24, 64, halfArc);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.y = Math.PI / 2;
+        mesh.rotation.z = -Math.PI / 2;
+        return mesh;
+    }
+
+    const neonRingMat = new THREE.MeshBasicMaterial({
+        color: 0x00ddff, transparent: true, opacity: 0.95, depthWrite: false
+    });
+    neonRingGroup.add(makeArchMesh(archRadius, tubeRadius, neonRingMat));
+
+    const bloomMat1 = new THREE.MeshBasicMaterial({
+        color: 0x00ccff, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    neonRingGroup.add(makeArchMesh(archRadius, tubeRadius * 4, bloomMat1));
+
+    const bloomMat2 = new THREE.MeshBasicMaterial({
+        color: 0x0088cc, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    neonRingGroup.add(makeArchMesh(archRadius, tubeRadius * 10, bloomMat2));
+
+    const footGeo = new THREE.SphereGeometry(0.4, 12, 12);
+    const footMat = new THREE.MeshBasicMaterial({
+        color: 0x00eeff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending
+    });
+    const footL = new THREE.Mesh(footGeo, footMat);
+    footL.position.set(-archRadius, 0, 0);
+    neonRingGroup.add(footL);
+    const footR = new THREE.Mesh(footGeo, footMat);
+    footR.position.set(archRadius, 0, 0);
+    neonRingGroup.add(footR);
+
+    neonRingGroup.position.set(0, 0, -75);
+    scene.add(neonRingGroup);
+    window.neonRingGroup = neonRingGroup;
+    window.neonRingMat = neonRingMat;
+    window.neonBloomMat1 = bloomMat1;
+    */
 
     // Handle Resize + keep character visible on mobile (no horizontal clipping)
     function updateCameraViewport() {
@@ -326,19 +572,11 @@ function createAssets() {
     // Reusable Geometries
     geometries.box = new THREE.BoxGeometry(1, 1, 1);
     geometries.cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
-    geometries.coin = new THREE.CylinderGeometry(0.4, 0.4, 0.12, 32);
-    (function() {
-        const starShape = new THREE.Shape();
-        const outerR = 0.12, innerR = 0.045;
-        starShape.moveTo(outerR * Math.cos(-Math.PI/2), outerR * Math.sin(-Math.PI/2));
-        for (let i = 1; i <= 5; i++) {
-            const aInner = (i * 2 - 1) * Math.PI / 5 - Math.PI/2;
-            starShape.lineTo(innerR * Math.cos(aInner), innerR * Math.sin(aInner));
-            const aOuter = (i * 2) * Math.PI / 5 - Math.PI/2;
-            starShape.lineTo(outerR * Math.cos(aOuter), outerR * Math.sin(aOuter));
-        }
-        geometries.coinStar = new THREE.ExtrudeGeometry(starShape, { depth: 0.02, bevelEnabled: false });
-    })();
+    // Energy Orb geometries (replaces old coins)
+    geometries.orbCore = new THREE.BoxGeometry(0.3, 0.3, 0.3);       // inner plasma cube
+    geometries.orbShell = new THREE.OctahedronGeometry(0.4, 1);       // translucent energy shell
+    geometries.orbGlow = new THREE.SphereGeometry(0.55, 16, 16);      // outer glow sphere
+    geometries.orbRing = new THREE.TorusGeometry(0.38, 0.03, 8, 24);  // orbiting ring
     geometries.rail = new THREE.BoxGeometry(0.2, 0.1, 100);
     geometries.railBar = new THREE.BoxGeometry(0.14, 0.07, 200); // 3D rail on track
     geometries.jetpack = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 8);
@@ -346,17 +584,58 @@ function createAssets() {
     geometries.crystalShard = new THREE.OctahedronGeometry(0.65, 0);
     geometries.crystalRing = new THREE.TorusGeometry(0.72, 0.08, 10, 28);
 
-    // Neon lane texture: pure glowing grid lines (no railway sleepers)
+    // Energy bridge grid texture (transparent with neon lines)
     const rCanvas = document.createElement('canvas');
     const rW = 256, rH = 256;
     rCanvas.width = rW; rCanvas.height = rH;
     const rCtx = rCanvas.getContext('2d');
-    rCtx.fillStyle = '#0b1224';
+
+    // Transparent base
+    rCtx.clearRect(0, 0, rW, rH);
+
+    // Faint base tint
+    rCtx.fillStyle = 'rgba(8, 20, 40, 0.25)';
     rCtx.fillRect(0, 0, rW, rH);
-    for (let i = 0; i < 7; i++) {
-        rCtx.fillStyle = '#1d2c4a';
-        rCtx.fillRect(Math.random() * rW, Math.random() * rH, 2, 2);
+
+    // Horizontal grid lines
+    for (let y = 0; y < rH; y += 32) {
+        rCtx.strokeStyle = 'rgba(80, 200, 255, 0.3)';
+        rCtx.lineWidth = 1;
+        rCtx.beginPath();
+        rCtx.moveTo(0, y);
+        rCtx.lineTo(rW, y);
+        rCtx.stroke();
     }
+
+    // Vertical grid lines
+    for (let x = 0; x < rW; x += 32) {
+        rCtx.strokeStyle = 'rgba(80, 200, 255, 0.2)';
+        rCtx.lineWidth = 1;
+        rCtx.beginPath();
+        rCtx.moveTo(x, 0);
+        rCtx.lineTo(x, rH);
+        rCtx.stroke();
+    }
+
+    // Bright center lane lines
+    [96, 128, 160].forEach(lx => {
+        rCtx.strokeStyle = 'rgba(100, 220, 255, 0.5)';
+        rCtx.lineWidth = 2;
+        rCtx.beginPath();
+        rCtx.moveTo(lx, 0);
+        rCtx.lineTo(lx, rH);
+        rCtx.stroke();
+    });
+
+    // Edge glow lines
+    [4, rW - 4].forEach(ex => {
+        rCtx.strokeStyle = 'rgba(80, 180, 255, 0.6)';
+        rCtx.lineWidth = 3;
+        rCtx.beginPath();
+        rCtx.moveTo(ex, 0);
+        rCtx.lineTo(ex, rH);
+        rCtx.stroke();
+    });
 
     const railTex = new THREE.CanvasTexture(rCanvas);
     railTex.wrapS = THREE.RepeatWrapping;
@@ -515,42 +794,34 @@ function createAssets() {
     materials.barrierRed = new THREE.MeshStandardMaterial({ color: 0x8855ff, emissive: 0x220044, emissiveIntensity: 0.2, roughness: 0.35 });
     materials.barrierWhite = new THREE.MeshStandardMaterial({ color: 0xb6d9ff, roughness: 0.4, metalness: 0.2 });
 
-    // --- Space mine materials (glowing red, high visibility) ---
-    materials.mineShell = new THREE.MeshPhysicalMaterial({
-        color: 0x661122,
-        roughness: 0.25,
-        metalness: 0.6,
-        clearcoat: 0.4,
-        emissive: 0xaa2233,
-        emissiveIntensity: 0.5
+    // --- Asteroid chunk materials ---
+    materials.asteroidRock = new THREE.MeshStandardMaterial({
+        color: 0x5a504a,
+        roughness: 0.85,
+        metalness: 0.15,
+        emissive: 0x1a1510,
+        emissiveIntensity: 0.1
     });
-    materials.mineCore = new THREE.MeshStandardMaterial({
-        color: 0xff3355,
-        emissive: 0xff2244,
-        emissiveIntensity: 2.0,
-        roughness: 0.05,
-        metalness: 0.05
+    materials.asteroidRockLight = new THREE.MeshStandardMaterial({
+        color: 0x7a6e60,
+        roughness: 0.9,
+        metalness: 0.1,
+        emissive: 0x201a12,
+        emissiveIntensity: 0.1
     });
-    materials.mineCoreGlow = new THREE.MeshBasicMaterial({
-        color: 0xff4466,
+    materials.asteroidCrack = new THREE.MeshBasicMaterial({
+        color: 0xff6633,
         transparent: true,
-        opacity: 0.6,
+        opacity: 0.7,
         depthWrite: false,
         blending: THREE.AdditiveBlending
     });
-    materials.mineSpike = new THREE.MeshStandardMaterial({
-        color: 0x882233,
-        roughness: 0.3,
-        metalness: 0.55,
-        emissive: 0xcc3344,
-        emissiveIntensity: 0.4
-    });
-    materials.mineRing = new THREE.MeshStandardMaterial({
-        color: 0xff5577,
-        emissive: 0xff3355,
-        emissiveIntensity: 1.4,
-        roughness: 0.1,
-        metalness: 0.1
+    materials.asteroidGlow = new THREE.MeshBasicMaterial({
+        color: 0xff4422,
+        transparent: true,
+        opacity: 0.15,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
     });
 
     // --- Plasma pillar / laser gate materials ---
@@ -606,14 +877,33 @@ function createAssets() {
         blending: THREE.AdditiveBlending
     });
     
-    materials.coin = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.6, roughness: 0.25, emissive: 0xFFD700, emissiveIntensity: 0.4 });
-    materials.coinStar = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.5, roughness: 0.2, emissive: 0xFFE44E, emissiveIntensity: 0.5 });
-    // Soft glow halo behind coins (flat disc, additive blend)
-    geometries.coinGlow = new THREE.CylinderGeometry(0.325, 0.325, 0.02, 32);
-    materials.coinGlow = new THREE.MeshBasicMaterial({
-        color: 0xFFD700,
+    // Energy Orb materials (replaces old coins)
+    materials.orbCore = new THREE.MeshBasicMaterial({
+        color: 0x00ffcc,
         transparent: true,
-        opacity: 0.5,
+        opacity: 0.95
+    });
+    materials.orbShell = new THREE.MeshPhysicalMaterial({
+        color: 0x00ddff,
+        metalness: 0.2,
+        roughness: 0.1,
+        transparent: true,
+        opacity: 0.35,
+        emissive: 0x00aacc,
+        emissiveIntensity: 0.6,
+        depthWrite: false
+    });
+    materials.orbGlow = new THREE.MeshBasicMaterial({
+        color: 0x00ccff,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    materials.orbRing = new THREE.MeshBasicMaterial({
+        color: 0x00ffdd,
+        transparent: true,
+        opacity: 0.7,
         depthWrite: false,
         blending: THREE.AdditiveBlending
     });
@@ -717,12 +1007,12 @@ function createAssets() {
         transmission: 0.4,
         transparent: true
     });
-    materials.track = new THREE.MeshStandardMaterial({
+    materials.track = new THREE.MeshBasicMaterial({
         map: railTex,
-        roughness: 0.8,
-        metalness: 0.2,
-        emissive: 0x000000,
-        emissiveIntensity: 0
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
     });
     materials.runwayPost = new THREE.MeshStandardMaterial({ color: 0x5b6f93, roughness: 0.45, metalness: 0.25 });
     materials.runwayBulb = new THREE.MeshStandardMaterial({
@@ -1390,14 +1680,22 @@ class WorldManager {
             let obs = this.obstacles[i];
             obs.mesh.position.z += moveDist;
 
-            // Animate rotating space mines
+            // Animate tumbling asteroid chunks
             if (obs.mesh.userData.isMinefield) {
-                const mineT = clock.getElapsedTime();
-                obs.mesh.children.forEach(mine => {
-                    if (mine.userData.spinX !== undefined) {
-                        mine.rotation.x += mine.userData.spinX * dt;
-                        mine.rotation.y += mine.userData.spinY * dt;
-                        mine.position.y = mine.userData.baseY + Math.sin(mineT * 2.5 + mine.userData.bobPhase) * mine.userData.bobAmp;
+                const astT = clock.getElapsedTime();
+                obs.mesh.children.forEach(chunk => {
+                    if (chunk.userData.spinX !== undefined) {
+                        chunk.rotation.x += chunk.userData.spinX * dt;
+                        chunk.rotation.y += chunk.userData.spinY * dt;
+                        chunk.position.y = chunk.userData.baseY + Math.sin(astT * 2.0 + chunk.userData.bobPhase) * chunk.userData.bobAmp;
+                        // Animate orbiting debris
+                        chunk.children.forEach(child => {
+                            if (child.userData.isDebris) {
+                                child.userData.orbitAngle += child.userData.orbitSpeed * dt;
+                                child.position.x = Math.cos(child.userData.orbitAngle) * child.userData.orbitRadius;
+                                child.position.z = Math.sin(child.userData.orbitAngle) * child.userData.orbitRadius;
+                            }
+                        });
                     }
                 });
             }
@@ -1493,7 +1791,8 @@ class WorldManager {
         }
 
 
-        // Update Coins
+        // Update Energy Orbs (coins)
+        const elapsed = clock.getElapsedTime();
         for (let i = this.coins.length - 1; i >= 0; i--) {
             let coin = this.coins[i];
             coin.mesh.position.z += moveDist;
@@ -1502,6 +1801,28 @@ class WorldManager {
                 scene.remove(coin.mesh);
                 this.coins.splice(i, 1);
                 continue;
+            }
+
+            // Animate energy orb: spin core, rotate ring, bob, pulse glow
+            const ud = coin.mesh.userData;
+            if (ud.orbCore) {
+                ud.orbCore.rotation.x += 3.0 * dt;
+                ud.orbCore.rotation.y += 2.2 * dt;
+            }
+            if (ud.orbShell) {
+                ud.orbShell.rotation.y -= 1.0 * dt;
+                ud.orbShell.rotation.z += 0.6 * dt;
+            }
+            if (ud.orbRing) {
+                ud.orbRing.rotation.z += 2.5 * dt;
+                ud.orbRing.rotation.x += 0.8 * dt;
+            }
+            if (ud.orbGlow && ud.orbGlow.material) {
+                ud.orbGlow.material.opacity = 0.14 + Math.sin(elapsed * 4 + (ud.bobPhase || 0)) * 0.06;
+            }
+            // Gentle bobbing
+            if (ud.baseY !== undefined) {
+                coin.mesh.position.y = ud.baseY + Math.sin(elapsed * 3 + (ud.bobPhase || 0)) * 0.15;
             }
 
             // Magnet Attraction
@@ -1813,97 +2134,104 @@ class WorldManager {
     }
 
     spawnAsteroidCluster(lane) {
-        // Single large rotating space mine (jump over to avoid)
+        // Tumbling asteroid chunk (jump over to avoid)
         const group = new THREE.Group();
         const x = lane * CONFIG.laneWidth;
 
-        const mine = new THREE.Group();
+        const asteroid = new THREE.Group();
 
-        // Outer shell (wide octahedron)
-        const shell = new THREE.Mesh(
-            new THREE.OctahedronGeometry(0.9, 0),
-            materials.mineShell
+        // Main rock body — irregular shape from merged geometry
+        const rockMats = [materials.asteroidRock, materials.asteroidRockLight];
+
+        // Large primary chunk (dodecahedron for a craggy look)
+        const mainRock = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(0.85, 1),
+            rockMats[0]
         );
-        shell.scale.set(1.4, 0.9, 0.9);
-        shell.castShadow = true;
-        mine.add(shell);
-
-        // Inner glowing core
-        const core = new THREE.Mesh(
-            new THREE.SphereGeometry(0.35, 12, 12),
-            materials.mineCore
-        );
-        mine.add(core);
-
-        // Core glow halo
-        const coreGlow = new THREE.Mesh(
-            new THREE.SphereGeometry(0.55, 12, 12),
-            materials.mineCoreGlow
-        );
-        mine.add(coreGlow);
-
-        // Danger spikes (10 directions for a beefy look)
-        const spikeGeo = new THREE.ConeGeometry(0.08, 0.45, 6);
-        const spikeDirections = [
-            { pos: [0, 1, 0], rot: [0, 0, 0] },
-            { pos: [0, -1, 0], rot: [Math.PI, 0, 0] },
-            { pos: [1, 0, 0], rot: [0, 0, -Math.PI / 2] },
-            { pos: [-1, 0, 0], rot: [0, 0, Math.PI / 2] },
-            { pos: [0, 0, 1], rot: [Math.PI / 2, 0, 0] },
-            { pos: [0, 0, -1], rot: [-Math.PI / 2, 0, 0] },
-            { pos: [0.7, 0.7, 0], rot: [0, 0, -Math.PI / 4] },
-            { pos: [-0.7, 0.7, 0], rot: [0, 0, Math.PI / 4] },
-            { pos: [0.7, -0.7, 0], rot: [0, 0, -3 * Math.PI / 4] },
-            { pos: [-0.7, -0.7, 0], rot: [0, 0, 3 * Math.PI / 4] }
-        ];
-        spikeDirections.forEach(sd => {
-            const spike = new THREE.Mesh(spikeGeo, materials.mineSpike);
-            spike.position.set(
-                sd.pos[0] * 0.7,
-                sd.pos[1] * 0.65,
-                sd.pos[2] * 0.65
+        mainRock.scale.set(1.3, 0.85, 0.95);
+        // Deform vertices slightly for organic feel
+        const pos = mainRock.geometry.attributes.position;
+        for (let v = 0; v < pos.count; v++) {
+            pos.setXYZ(v,
+                pos.getX(v) * (0.85 + Math.random() * 0.3),
+                pos.getY(v) * (0.85 + Math.random() * 0.3),
+                pos.getZ(v) * (0.85 + Math.random() * 0.3)
             );
-            spike.rotation.set(sd.rot[0], sd.rot[1], sd.rot[2]);
-            mine.add(spike);
+        }
+        pos.needsUpdate = true;
+        mainRock.geometry.computeVertexNormals();
+        mainRock.castShadow = true;
+        asteroid.add(mainRock);
 
-            // Glowing red tip
-            const tip = new THREE.Mesh(
-                new THREE.SphereGeometry(0.04, 6, 6),
-                materials.mineCore
-            );
-            tip.position.set(
-                sd.pos[0] * 0.95,
-                sd.pos[1] * 0.9,
-                sd.pos[2] * 0.9
-            );
-            mine.add(tip);
-        });
-
-        // Equatorial warning ring (horizontal)
-        const ring1 = new THREE.Mesh(
-            new THREE.TorusGeometry(0.75, 0.03, 8, 28),
-            materials.mineRing
+        // Secondary chunk fused to the side
+        const chunk2 = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(0.5, 0),
+            rockMats[1]
         );
-        ring1.rotation.x = Math.PI / 2;
-        mine.add(ring1);
+        chunk2.position.set(0.6, 0.3, 0.2);
+        chunk2.rotation.set(0.5, 0.8, 0.3);
+        chunk2.scale.set(1.1, 0.8, 0.9);
+        asteroid.add(chunk2);
 
-        // Second ring (vertical, cross-axis)
-        const ring2 = new THREE.Mesh(
-            new THREE.TorusGeometry(0.65, 0.025, 8, 28),
-            materials.mineRing
+        // Third small chunk on other side
+        const chunk3 = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.35, 0),
+            rockMats[0]
         );
-        mine.add(ring2);
+        chunk3.position.set(-0.5, -0.2, -0.3);
+        chunk3.rotation.set(1.2, 0.4, 0.7);
+        asteroid.add(chunk3);
 
-        mine.position.set(0, 0.85, 0);
+        // Glowing crack lines (thin emissive strips on surface)
+        const crackGeo = new THREE.BoxGeometry(0.04, 0.5, 0.04);
+        for (let c = 0; c < 5; c++) {
+            const crack = new THREE.Mesh(crackGeo, materials.asteroidCrack);
+            const angle = (c / 5) * Math.PI * 2 + Math.random() * 0.5;
+            const r = 0.6 + Math.random() * 0.3;
+            crack.position.set(
+                Math.cos(angle) * r * 0.7,
+                (Math.random() - 0.5) * 0.8,
+                Math.sin(angle) * r * 0.7
+            );
+            crack.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            crack.scale.y = 0.5 + Math.random() * 1.0;
+            asteroid.add(crack);
+        }
 
-        // Spin data for animation
-        mine.userData.spinX = (0.8 + Math.random() * 0.8) * (Math.random() > 0.5 ? 1 : -1);
-        mine.userData.spinY = (1.0 + Math.random() * 1.0) * (Math.random() > 0.5 ? 1 : -1);
-        mine.userData.bobPhase = Math.random() * Math.PI * 2;
-        mine.userData.bobAmp = 0.08;
-        mine.userData.baseY = mine.position.y;
+        // Faint outer heat glow (from re-entry / energy)
+        const glowMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(1.2, 12, 12),
+            materials.asteroidGlow
+        );
+        asteroid.add(glowMesh);
 
-        group.add(mine);
+        // Small orbiting debris (tiny rocks circling)
+        for (let d = 0; d < 3; d++) {
+            const debris = new THREE.Mesh(
+                new THREE.OctahedronGeometry(0.08 + Math.random() * 0.08, 0),
+                rockMats[Math.floor(Math.random() * 2)]
+            );
+            const da = (d / 3) * Math.PI * 2;
+            const dr = 1.1 + Math.random() * 0.3;
+            debris.position.set(Math.cos(da) * dr, (Math.random() - 0.5) * 0.4, Math.sin(da) * dr);
+            debris.userData.orbitAngle = da;
+            debris.userData.orbitRadius = dr;
+            debris.userData.orbitSpeed = 1.5 + Math.random() * 1.0;
+            debris.userData.orbitY = debris.position.y;
+            debris.userData.isDebris = true;
+            asteroid.add(debris);
+        }
+
+        asteroid.position.set(0, 0.85, 0);
+
+        // Tumble data for animation
+        asteroid.userData.spinX = (0.4 + Math.random() * 0.5) * (Math.random() > 0.5 ? 1 : -1);
+        asteroid.userData.spinY = (0.5 + Math.random() * 0.6) * (Math.random() > 0.5 ? 1 : -1);
+        asteroid.userData.bobPhase = Math.random() * Math.PI * 2;
+        asteroid.userData.bobAmp = 0.1;
+        asteroid.userData.baseY = asteroid.position.y;
+
+        group.add(asteroid);
 
         // Tag for rotation animation in update loop
         group.userData.isMinefield = true;
@@ -2037,17 +2365,32 @@ class WorldManager {
 
     createCoin(x, y, z) {
         const group = new THREE.Group();
-        const glow = new THREE.Mesh(geometries.coinGlow, materials.coinGlow);
-        glow.rotation.x = Math.PI / 2;
+
+        // Outer glow sphere
+        const glow = new THREE.Mesh(geometries.orbGlow, materials.orbGlow);
         group.add(glow);
-        const disc = new THREE.Mesh(geometries.coin, materials.coin);
-        disc.rotation.x = Math.PI / 2;
-        group.add(disc);
-        const star = new THREE.Mesh(geometries.coinStar, materials.coinStar);
-        star.position.z = 0.065;
-        star.scale.setScalar(1);
-        group.add(star);
+
+        // Translucent energy shell (octahedron)
+        const shell = new THREE.Mesh(geometries.orbShell, materials.orbShell);
+        group.add(shell);
+
+        // Inner plasma cube core
+        const core = new THREE.Mesh(geometries.orbCore, materials.orbCore);
+        group.add(core);
+
+        // Orbiting ring
+        const ring = new THREE.Mesh(geometries.orbRing, materials.orbRing);
+        ring.rotation.x = Math.PI / 3;
+        group.add(ring);
+
         group.position.set(x, y, z);
+        // Store refs for animation
+        group.userData.orbCore = core;
+        group.userData.orbShell = shell;
+        group.userData.orbRing = ring;
+        group.userData.orbGlow = glow;
+        group.userData.bobPhase = Math.random() * Math.PI * 2;
+        group.userData.baseY = y;
         scene.add(group);
         this.coins.push({ mesh: group });
     }
@@ -2543,7 +2886,7 @@ function loadSaveData() {
     try {
         const savedScore = localStorage.getItem('spaceRunHighScore');
         if (savedScore) highScore = parseInt(savedScore) || 0;
-        document.getElementById('menu-highscore').innerText = `Best: ${Math.floor(highScore)}`;
+        document.getElementById('menu-highscore').innerText = Math.floor(highScore);
         document.getElementById('final-best').innerText = Math.floor(highScore);
 
         const savedCoins = localStorage.getItem('spaceRunCoins');
@@ -2552,7 +2895,7 @@ function loadSaveData() {
         } else {
             totalCoins = parseInt(savedCoins);
         }
-        document.getElementById('menu-headstarts').innerText = `Headstarts: ${inventory.headstart}`;
+        document.getElementById('menu-headstarts').innerText = inventory.headstart;
 
         const savedUpgrades = localStorage.getItem('spaceRunUpgrades');
         if (savedUpgrades) {
@@ -2701,7 +3044,7 @@ function closeShop() {
 
 function renderShop() {
     const container = document.getElementById('shop-container');
-    container.innerHTML = `<div style="text-align:center; margin-bottom:10px; font-size:20px;">Coins: <span style="color:#FFD700">${totalCoins}</span></div>`;
+    container.innerHTML = `<div style="text-align:center; margin-bottom:10px; font-size:18px; color:rgba(0,200,255,0.5); letter-spacing:2px;">ENERGY CREDITS <span style="color:#00ffcc; font-size:22px; font-weight:bold;">${totalCoins}</span></div>`;
 
     const items = [
         { id: 'magnet', name: 'Magnet Duration', type: 'upgrade', max: 6 },
@@ -2921,11 +3264,97 @@ function animate() {
         worldChunkManager.update(dt, currentSpeed);
 
         // Scroll Textures for speed illusion
-        if (window.groundTex) window.groundTex.offset.y -= currentSpeed * 0.0005;
+        if (window.groundTex) window.groundTex.offset.y -= currentSpeed * 0.0003;
         if (window.railTex) window.railTex.offset.y -= currentSpeed * 0.005;
 
         // Rotate skybox slowly
         if (window.skyMesh) window.skyMesh.rotation.y += 0.01 * dt;
+
+        // Animate star streak particles (rush toward player)
+        if (window.starStreaks) {
+            const positions = window.starStreaks.geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i + 2] += currentSpeed * dt;
+                if (positions[i + 2] > 15) {
+                    positions[i] = (Math.random() - 0.5) * 60;
+                    positions[i + 1] = Math.random() * 20 - 2;
+                    positions[i + 2] = -120 - Math.random() * 40;
+                }
+            }
+            window.starStreaks.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // Distant planet slow drift + gentle rotation
+        if (window.distantPlanet) {
+            window.distantPlanet.rotation.y += 0.003 * dt;
+            // subtle bobbing
+            window.distantPlanet.position.y = 25 + Math.sin(clock.getElapsedTime() * 0.1) * 0.5;
+        }
+
+        // Parallax asteroid field - slow counter-rotation for depth
+        if (window.asteroidField) {
+            window.asteroidField.rotation.y += 0.004 * dt;
+            window.asteroidField.children.forEach(a => {
+                a.rotation[a.userData.spinAxis] += a.userData.spinSpeed * dt;
+            });
+        }
+
+        // Neon horizon arch pulse — COMMENTED OUT FOR NOW
+        /*
+        if (window.neonRingGroup) {
+            const t = clock.getElapsedTime();
+            const pulse = 0.85 + Math.sin(t * 1.8) * 0.15;
+            if (window.neonRingMat) window.neonRingMat.opacity = pulse;
+            if (window.neonBloomMat1) window.neonBloomMat1.opacity = 0.18 + Math.sin(t * 1.8 + 0.5) * 0.08;
+        }
+        */
+
+        // Shooting stars
+        if (window.shootingStars) {
+            window.shootingStars.forEach(ss => {
+                const ud = ss.userData;
+                if (!ud.active) {
+                    ud.timer -= dt;
+                    if (ud.timer <= 0) {
+                        // Launch a new shooting star from a random edge
+                        ud.active = true;
+                        ss.visible = true;
+                        const side = Math.random() > 0.5 ? 1 : -1;
+                        ss.position.set(
+                            side * (40 + Math.random() * 30),
+                            15 + Math.random() * 30,
+                            -60 - Math.random() * 40
+                        );
+                        ud.dirX = -side * (0.6 + Math.random() * 0.4);
+                        ud.dirY = -(0.3 + Math.random() * 0.3);
+                        ud.dirZ = (Math.random() - 0.5) * 0.3;
+                        ud.speed = 80 + Math.random() * 60;
+                        // Point the trail in the direction of travel
+                        ss.lookAt(
+                            ss.position.x + ud.dirX * 10,
+                            ss.position.y + ud.dirY * 10,
+                            ss.position.z + ud.dirZ * 10
+                        );
+                    }
+                } else {
+                    ss.position.x += ud.dirX * ud.speed * dt;
+                    ss.position.y += ud.dirY * ud.speed * dt;
+                    ss.position.z += ud.dirZ * ud.speed * dt;
+                    // Fade tail
+                    const trail = ss.children[1];
+                    if (trail && trail.material) {
+                        trail.material.opacity = Math.max(0, trail.material.opacity - 0.3 * dt);
+                    }
+                    // Reset when out of view
+                    if (ss.position.y < -20 || Math.abs(ss.position.x) > 120 || ss.position.z > 30) {
+                        ud.active = false;
+                        ss.visible = false;
+                        ud.timer = 8 + Math.random() * 20; // next delay
+                        if (trail && trail.material) trail.material.opacity = 0.5;
+                    }
+                }
+            });
+        }
 
         // Progression
         if (score < 550) {
